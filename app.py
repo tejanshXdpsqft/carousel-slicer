@@ -1,7 +1,7 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from PIL import Image
 import io
-import zipfile
+import base64
 import os
 
 app = Flask(__name__)
@@ -12,16 +12,10 @@ def health():
 
 @app.route("/slice", methods=["POST"])
 def slice_image():
-    """
-    Accepts a PNG file upload, slices it into 7 equal horizontal strips,
-    and returns a ZIP file containing slide_1.png through slide_7.png.
-    """
     if "file" not in request.files:
-        return jsonify({"error": "No file provided. Send PNG as multipart/form-data with key 'file'"}), 400
+        return jsonify({"error": "No file provided"}), 400
 
     file = request.files["file"]
-    if not file.filename.lower().endswith(".png"):
-        return jsonify({"error": "Only PNG files are supported"}), 400
 
     try:
         img = Image.open(file.stream).convert("RGBA")
@@ -29,28 +23,20 @@ def slice_image():
         num_slices = 7
         slice_height = height // num_slices
 
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            for i in range(num_slices):
-                top = i * slice_height
-                # Last slice gets any remaining pixels (handles rounding)
-                bottom = (i + 1) * slice_height if i < num_slices - 1 else height
+        slices = []
+        for i in range(num_slices):
+            top = i * slice_height
+            bottom = (i + 1) * slice_height if i < num_slices - 1 else height
+            slice_img = img.crop((0, top, width, bottom))
+            buf = io.BytesIO()
+            slice_img.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            slices.append({
+                "filename": f"slide_{i + 1}.png",
+                "data": b64
+            })
 
-                slice_img = img.crop((0, top, width, bottom))
-                slice_buffer = io.BytesIO()
-                slice_img.save(slice_buffer, format="PNG")
-                slice_buffer.seek(0)
-
-                filename = f"slide_{i + 1}.png"
-                zf.writestr(filename, slice_buffer.read())
-
-        zip_buffer.seek(0)
-        return send_file(
-            zip_buffer,
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name="carousel_slices.zip"
-        )
+        return jsonify({"slices": slices})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
