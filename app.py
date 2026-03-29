@@ -21,13 +21,15 @@ def slice_image():
         img = Image.open(file.stream).convert("RGBA")
         width, height = img.size
         num_slices = 7
-        slice_height = height // num_slices
+        slice_width = width // num_slices
 
         slices = []
         for i in range(num_slices):
-            top = i * slice_height
-            bottom = (i + 1) * slice_height if i < num_slices - 1 else height
-            slice_img = img.crop((0, top, width, bottom))
+            left = i * slice_width
+            # Last slice gets any remaining pixels
+            right = (i + 1) * slice_width if i < num_slices - 1 else width
+
+            slice_img = img.crop((left, 0, right, height))
             buf = io.BytesIO()
             slice_img.save(buf, format="PNG")
             b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
